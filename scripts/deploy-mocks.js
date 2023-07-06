@@ -1,6 +1,7 @@
 const {network, ethers} = require("hardhat");
 const {developmentChains, networkConfig} = require("../helper-hardhat.config")
-const {verify} = require("../utils/verify")
+const {verify} = require("../utils/verify");
+const { parseEther, parseUnits } = require("ethers/lib/utils");
 
 // hre = hardhat runtime environment gives all this arguments to deploy scripts
 
@@ -13,14 +14,14 @@ module.exports = async ({getNamedAccounts, deployments}) => {
     if(developmentChains.includes(networkName)){
         const MockV3AggregatorEth = await deploy("MockV3Aggregator", {
             from: deployer,
-            args: [8, 1937e8],
+            args: [8, parseUnits("1000", 8)],
             log: true,
             waitConfirmations: network.config.blockConfirmations || 1
         })
     
         const MockV3AggregatorBtc = await deploy("MockV3Aggregator", {
             from: deployer,
-            args: [8, 31000e8],
+            args: [8, parseUnits("2000", 8)],
             log: true,
             waitConfirmations: network.config.blockConfirmations || 1
         })

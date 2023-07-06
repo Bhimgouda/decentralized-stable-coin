@@ -6,6 +6,7 @@ import "./DecentralizedStableCoin.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import "hardhat/console.sol";
 
 /**
  * @title DecentralizedStableCoin
@@ -52,7 +53,7 @@ contract DSCEngine is ReentrancyGuard{
 
 
     mapping(address collateralToken => address s_priceFeeds) private s_priceFeeds;
-    address[] private s_collateralTokens;
+    address[] public s_collateralTokens;
 
     mapping(address user => mapping(address collateralToken => uint256 amount)) private s_collateralDeposited;         // in Wei - 18 Decimals
 
@@ -61,9 +62,10 @@ contract DSCEngine is ReentrancyGuard{
     DecentralizedStableCoin private immutable i_dsc;
 
     //////////////////////////////
-    //// Events       ///////
+    //// Events         /////////
     ////////////////////////////
     event CollateralDeposited(address indexed user, address indexed tokenCollateralAddress, uint256 indexed amountCollateral);
+    event MintedDsc(address indexed user, uint256 dscMinted);
 
     //////////////////////////////
     //// Modifiers        ///////
@@ -72,8 +74,8 @@ contract DSCEngine is ReentrancyGuard{
     modifier moreThanZero(uint256 amount){
         if(amount <= 0) {
             revert DSCEngine__NeedsMoreThanZero();
-            _;
         }
+        _;
     }
 
     modifier isAllowedToken(address token){
@@ -104,15 +106,24 @@ contract DSCEngine is ReentrancyGuard{
         i_dsc = DecentralizedStableCoin(dscAddress);
     }
 
-    function depositCollateralAndMintDsc() external {}
+    /**
+     * 
+     * @param tokenCollateralAddress  Address of token that is being deposited as Collateral
+     * @param amountCollateral The amount of collateral token
+     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     */
+    function depositCollateralAndMintDsc(address tokenCollateralAddress, uint256 amountCollateral, uint256 amountDscToMint) external {
+        depositCollateral(tokenCollateralAddress, amountCollateral);
+        mintDsc(amountDscToMint);
+    }
 
     /**
      * @notice follows CEI pattern
      * @param tokenCollateralAddress Address of token that is being deposited as Collateral
-     * @param amountCollateral The amount of Colleteral token
+     * @param amountCollateral The amount of collateral token
      * 
     */
-    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral) external moreThanZero(amountCollateral) isAllowedToken(tokenCollateralAddress) nonReentrant {
+    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral) public moreThanZero(amountCollateral) isAllowedToken(tokenCollateralAddress) nonReentrant {
         s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
 
         bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
@@ -128,11 +139,13 @@ contract DSCEngine is ReentrancyGuard{
      * 
      * 
      */
-    function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) {
+    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) {
         s_DSCMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsBroken(msg.sender);
         bool minted = i_dsc.mint(msg.sender, amountDscToMint);
         if(!minted) revert DSCEngine__MintFailed();
+
+        emit MintedDsc(msg.sender, amountDscToMint);
     }
 
     function redeemCollateralForDsc() external {}
@@ -163,8 +176,7 @@ contract DSCEngine is ReentrancyGuard{
     function getUsdValue(address token, uint256 amount) public view returns(uint256){
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int price, , ,) = priceFeed.latestRoundData();
-        // uint8 decimals = priceFeed.decimals();  Assuming decimals 8
-        return ((uint256(price)*ADDITIONAL_FEED_PRECISION)/PRECISION) * amount / PRECISION;  // Doubt (Changed according to me)
+        return ((uint256(price)*ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
 
     ////////////////////////////////////////////
@@ -183,7 +195,7 @@ contract DSCEngine is ReentrancyGuard{
     function _healthFactor(address user) private view returns(uint256){
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
-        return (collateralAdjustedForThreshold) / totalDscMinted;   // Doubt
+        return (collateralAdjustedForThreshold) / totalDscMinted;   // Doubt (According to me)
     }
 
     function _revertIfHealthFactorIsBroken(address user) internal view{

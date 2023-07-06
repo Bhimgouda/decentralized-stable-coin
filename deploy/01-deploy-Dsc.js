@@ -17,10 +17,16 @@ module.exports = async ({getNamedAccounts, deployments}) => {
 
         priceFeedAddresses = [MockV3AggregatorEth, MockV3AggregatorBtc]
         collateralTokenAddresses = [mockWETH, mockWBTC]
-    } else{
-        // Changes on production
-    }
+    } else if(networkName === "sepolia"){
+        const wethAddress = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9"
+        const wbtcAddress = ""
 
+        collateralTokenAddresses = [wbtcAddress, wbtcAddress]
+
+        const ethUsdPriceFeedAddress = "0x694AA1769357215DE4FAC081bf1f309aDC325306"
+        const btcUsdPriceFeedAddress = "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43"
+        priceFeedAddresses = [ethUsdPriceFeedAddress, btcUsdPriceFeedAddress]
+    }
     
     const DecentralizedStableCoin = await deploy("DecentralizedStableCoin", {
         from: deployer,
@@ -29,7 +35,7 @@ module.exports = async ({getNamedAccounts, deployments}) => {
         waitConfirmations: network.config.blockConfirmations || 1
     });
     
-    const dscEngineArgs = [priceFeedAddresses, collateralTokenAddresses, DecentralizedStableCoin.address]
+    const dscEngineArgs = [collateralTokenAddresses, priceFeedAddresses, DecentralizedStableCoin.address]
 
     const DSCEngine = await deploy("DSCEngine", {
         from: deployer,
