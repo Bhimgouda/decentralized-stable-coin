@@ -51,7 +51,8 @@ contract DSCEngine is ReentrancyGuard{
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 50% of deposited Collateral 
     uint256 private constant LIQUIDATION_PRECISION = 100;
-    uint256 private constant MIN_HEALTH_FACTOR = 1;  // Doubt (should be 1e18)
+    uint256 private constant HEALTH_FACTOR_PRECISION = 1e5;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e5;  
     uint256 private constant LIQUIDATION_BONUS = 10;
 
 
@@ -139,7 +140,7 @@ contract DSCEngine is ReentrancyGuard{
 
     /**
      * @notice follows CEI
-     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     * @param amountDscToMint - 1e18 The amount of decentralized stablecoin to mint 
      * @notice they must have collateral value than the minimum threshold
      * 
      * 
@@ -220,7 +221,13 @@ contract DSCEngine is ReentrancyGuard{
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
-    function getHealthFactor() external view{}
+    /**
+     * 
+     * @param user Address of the user for whom you want to check healthFactor
+     */
+    function getHealthFactor(address user) external view returns(uint256){
+        return _healthFactor(user);
+    }
 
     /////////////////////////////////////////
     //// Public & External View Functions  ///////
@@ -283,8 +290,12 @@ contract DSCEngine is ReentrancyGuard{
      */
     function _healthFactor(address user) private view returns(uint256){
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        if(totalDscMinted == 0 && collateralValueInUsd == 0) return MIN_HEALTH_FACTOR;                         // Edge Case 1
+
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
-        return (collateralAdjustedForThreshold) / totalDscMinted;   // Doubt (According to me)
+        if(totalDscMinted == 0) return collateralAdjustedForThreshold * HEALTH_FACTOR_PRECISION / PRECISION;  // Edge Case 2
+ 
+        return (collateralAdjustedForThreshold) * HEALTH_FACTOR_PRECISION / totalDscMinted;   
     }
 
     function _revertIfHealthFactorIsBroken(address user) internal view{
