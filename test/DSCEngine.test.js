@@ -15,16 +15,15 @@ const { utils } = require("ethers");
         let dscUser
 
         let wethAddress
-        let wethAmount = utils.parseEther("20") 
+        let wethAmount = utils.parseEther("20")
         
-        let dscAmount = utils.parseEther("5");
+        let dscAmount = utils.parseEther("10000");
+
+        let priceFeedAggregator;
 
         beforeEach(async function(){
             deployer = (await getNamedAccounts()).deployer
             user = (await getNamedAccounts()).user
-            
-            console.log(user)
-            console.log(deployer)
             
             await deployments.fixture(["all"])
             
@@ -41,6 +40,9 @@ const { utils } = require("ethers");
             const wethContractUser = await ethers.getContractAt("ERC20Mock", wethAddress, user)
             await wethContractUser.mint(user, wethAmount)
             await wethContractUser.approve(dscEngine.address, wethAmount)
+
+            priceFeedAggregator = await ethers.getContractAt("MockV3Aggregator", "0x5fbdb2315678afecb367f032d93f642f64180aa3", user);
+            await priceFeedAggregator.updateAnswer(utils.parseUnits("1000", 8));
         })
         
         
@@ -97,7 +99,7 @@ const { utils } = require("ethers");
 
 
         /////////////////////////////////////////////////
-        //// Burn DSC And Redeem Collateral    ///////
+        //// Burn DSC And Redeem Collateral    //////////
         ////////////////////////////////////////////////
 
 
@@ -122,6 +124,59 @@ const { utils } = require("ethers");
             it("Should get Collateral that is not in use", async()=>{
                 await expect( dscEngineUser.redeemCollateral(wethAddress, utils.parseEther("19.99"))).to.emit(dscEngine, "CollateralRedeemed");
             })
+
+            
+            ////////////////////////////////
+            //// Liquidation Tests    /////
+            ///////////////////////////////
+
+            describe("Tests of liquidation", function(){
+                const randomDscAmount = utils.parseEther("5000")
+                
+                beforeEach(async function(){
+                    
+                    // Making the liquidator Account Ready (Deployer is the liquidator here)
+                    const wethContract = await ethers.getContractAt("ERC20Mock", wethAddress, deployer)
+                    await wethContract.mint(deployer, wethAmount)
+                    await wethContract.approve(dscEngine.address, wethAmount)
+                    
+                    const validDscAmount = utils.parseEther("10000")
+                    
+                    await dscEngine.depositCollateralAndMintDsc(wethAddress, wethAmount, randomDscAmount)
+                    await dsc.approve(dscEngine.address, randomDscAmount)
+
+                    // ETH colleateral Price has dropped by 50%
+                    await priceFeedAggregator.updateAnswer(utils.parseUnits("900", 8));
+                })
+                
+                it("The USD price of ETH(collateral) should be updated", async ()=>{
+                    const expectedPrice = "18000.0"
+                    const actualUsd = utils.formatEther(await dscEngineUser.getUsdValue(wethAddress, wethAmount))
+                    expect(actualUsd).to.equal(expectedPrice)
+                })
+
+                it("Health factor of the user must be 0.9", async()=>{
+                    const healthFactor = (await dscEngineUser.getHealthFactor(user)).toString()
+                    expect(healthFactor).to.equal("90000")
+                })
+
+                it("should revert liquidation if users health factor is ok", async()=>{
+                    const amountDscToBurn = utils.parseEther("1000")  // 0.9 of minted as health factor is 0.9
+                    await dscEngineUser.burnDsc(amountDscToBurn)
+
+                    // Now the health factor restores to 1 and Liquidation should be reverted
+                    await expect(dscEngine.liquidate(wethAddress, user, randomDscAmount)).to.be.revertedWith("DSCEngine__HealthFactorOk")
+                })
+
+                it("Get the total collateral with the bonus collateral", async()=>{
+                    // 
+
+                    expect(await dscEngine.liquidate(wethAddress, user, randomDscAmount)).to.emit("DSCEngine", "CollateralRedeemed")
+                })
+            })
+
         })
+
+        
     })
 
